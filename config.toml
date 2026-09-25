@@ -1,0 +1,429 @@
+# Mac Apple Silicon — prima installazione e aggiornamenti successivi
+# Salvare in ~/.config/mise/config.toml; da HOME: mise bootstrap --yes.
+# Richiede mise >= 2026.10.7. Runtime latest stabili, incluso Node (non limitato a LTS).
+[tools]
+bun = "latest"
+node = "latest"
+pnpm = "latest"
+python = "latest"
+uv = "latest"
+rust = { version = "latest", profile = "default", components = ["rust-src"] }
+
+[settings]
+# Auto-update nativo: mise e runtime globali; non app/cask o estensioni.
+self_update.auto = "1d"
+tool_update.global_auto = "24h"
+# Conserva i runtime precedenti anche durante gli aggiornamenti automatici.
+upgrade.auto_prune = false
+idiomatic_version_file_enable_tools = ["node", "python", "rust"]
+
+[settings.history]
+sync = "manual"
+
+[bootstrap.brew]
+adopt = true
+
+[bootstrap.packages]
+"brew:git" = "latest"
+"brew:curl" = "latest"
+"brew:zsh" = "latest"
+"brew:gh" = "latest"
+"brew:ripgrep" = "latest"
+"brew:jq" = "latest"
+"brew:fd" = "latest"
+"brew:fzf" = "latest"
+"brew:zoxide" = "latest"
+"brew-cask:visual-studio-code" = "latest"
+"brew-cask:google-chrome" = "latest"
+"brew-cask:yaak" = "latest"
+"brew-cask:warp" = "latest"
+"brew-cask:orbstack" = "latest"
+"brew-cask:claude" = "latest"
+"brew-cask:claude-code" = "latest"
+"brew-cask:codex" = "latest"
+"brew-cask:chatgpt" = "latest"
+
+[bootstrap.repos]
+"~/.oh-my-zsh" = { url = "https://github.com/ohmyzsh/ohmyzsh.git" }
+
+[bootstrap.user]
+login_shell = "/opt/homebrew/bin/zsh"
+
+[bootstrap.services.mise-history]
+builtin = "history-watch"
+
+# Controlli prima dei pacchetti; durante --dry-run gli hook non vengono eseguiti.
+[bootstrap.hooks]
+pre-packages = '''
+set -eu
+[ "$(uname -s)" = Darwin ] && [ "$(uname -m)" = arm64 ] || { echo 'Richiede macOS Apple Silicon nativo.' >&2; exit 1; }
+[ "$(id -u)" != 0 ] || { echo 'Eseguire senza sudo.' >&2; exit 1; }
+[ "${XDG_CONFIG_HOME:-$HOME/.config}" = "$HOME/.config" ] || { echo 'Usa XDG_CONFIG_HOME standard per questo setup.' >&2; exit 1; }
+[ "${ZDOTDIR:-$HOME}" = "$HOME" ] || { echo 'ZDOTDIR personalizzato: integra i blocchi shell nella tua configurazione prima del setup.' >&2; exit 1; }
+if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find clang >/dev/null 2>&1; then
+  echo 'Installa i Command Line Tools con xcode-select --install, poi ripeti mise bootstrap.' >&2
+  exit 1
+fi
+'''
+
+# Inizializza i file assenti; aggiorna le opzioni Git rerere e gli alias gestiti.
+# Comandi inline perché content nativo riscriverebbe i file a ogni apply.
+pre-dotfiles = '''
+set -eu
+umask 077
+if [ ! -e "$HOME/.gitconfig" ] && [ ! -L "$HOME/.gitconfig" ]; then
+  mkdir -p "$(dirname "$HOME/.gitconfig")"
+  (set -C; cat > "$HOME/.gitconfig" <<'MISE_DEFAULTS'
+[init]
+    defaultBranch = main
+[fetch]
+    prune = true
+[pull]
+    ff = only
+[push]
+    autoSetupRemote = true
+[core]
+    editor = code --wait
+    excludesFile = ~/.config/git/ignore
+    sshCommand = /usr/bin/ssh
+[credential]
+    helper = osxkeychain
+[include]
+    path = ~/.gitconfig.local
+MISE_DEFAULTS
+  )
+fi
+if [ ! -e "$HOME/.config/git/ignore" ] && [ ! -L "$HOME/.config/git/ignore" ]; then
+  mkdir -p "$(dirname "$HOME/.config/git/ignore")"
+  (set -C; cat > "$HOME/.config/git/ignore" <<'MISE_DEFAULTS'
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.*.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+*.pem
+MISE_DEFAULTS
+  )
+fi
+if [ ! -e "$HOME/.ssh/config" ] && [ ! -L "$HOME/.ssh/config" ]; then
+  mkdir -p "$(dirname "$HOME/.ssh/config")"
+  github_key="$HOME/.ssh/id_ed25519_github"
+  if [ ! -e "$github_key" ] && [ -f "$HOME/.ssh/id_ed25519" ]; then
+    github_key="$HOME/.ssh/id_ed25519"
+  fi
+  (set -C; cat > "$HOME/.ssh/config" <<MISE_DEFAULTS
+Host github.com
+    HostName github.com
+    User git
+    AddKeysToAgent yes
+    IgnoreUnknown UseKeychain
+    UseKeychain yes
+    IdentityFile "$github_key"
+    IdentitiesOnly yes
+MISE_DEFAULTS
+  )
+fi
+if [ ! -e "$HOME/.warp/settings.toml" ] && [ ! -L "$HOME/.warp/settings.toml" ]; then
+  mkdir -p "$(dirname "$HOME/.warp/settings.toml")"
+  (set -C; cat > "$HOME/.warp/settings.toml" <<'MISE_DEFAULTS'
+# Schema ufficiale: /Applications/Warp.app/Contents/Resources/settings_schema.json
+[appearance.text]
+font_size = 14.0
+line_height_ratio = 1.2
+
+[terminal.input]
+honor_ps1 = true
+input_box_type_setting = "classic"
+syntax_highlighting = true
+warp_completions_enabled = true
+native_shell_completions_enabled = true
+
+[session]
+new_session_shell_override = "system_default"
+
+[agents.warp_agent]
+is_any_ai_enabled = true
+
+[agents.warp_agent.active_ai]
+enabled = true
+
+[agents.third_party]
+should_render_cli_agent_toolbar = true
+
+# Telemetria non forzata: scegli nel primo avvio in base al piano Warp.
+# Permessi degli agenti lasciati ai default del prodotto.
+MISE_DEFAULTS
+  )
+fi
+if [ ! -e "$HOME/Library/Application Support/Code/User/settings.json" ] && [ ! -L "$HOME/Library/Application Support/Code/User/settings.json" ]; then
+  mkdir -p "$(dirname "$HOME/Library/Application Support/Code/User/settings.json")"
+  (set -C; cat > "$HOME/Library/Application Support/Code/User/settings.json" <<'MISE_DEFAULTS'
+{
+  "terminal.integrated.defaultProfile.osx": "zsh (mise)",
+  "terminal.integrated.profiles.osx": {
+    "zsh (mise)": { "path": "/opt/homebrew/bin/zsh", "args": ["-l"] }
+  },
+  "terminal.external.osxExec": "Warp.app",
+  "editor.tabSize": 2,
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "git.autofetch": true,
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}
+MISE_DEFAULTS
+  )
+fi
+# Riuso dei conflitti anche su Mac già configurati; revisione prima dello staging.
+git config --global --replace-all rerere.enabled true
+git config --global --replace-all rerere.autoupdate false
+
+# Alias Git dal dotfile originale; applicati anche ai profili già esistenti.
+git config --global --replace-all alias.amend 'commit --amend'
+git config --global --replace-all alias.unstage 'reset HEAD --'
+git config --global --replace-all alias.unstash 'stash pop'
+git config --global --replace-all alias.last 'log -1 HEAD'
+git config --global --replace-all alias.co checkout
+git config --global --replace-all alias.br branch
+git config --global --replace-all alias.ci commit
+git config --global --replace-all alias.st status
+git config --global --replace-all alias.ls 'log --pretty=format:%C(yellow)%h%Cred%d\ %Creset%s%Cgreen\ [%ae,%ar] --decorate --graph'
+git config --global --replace-all alias.lsf 'log --pretty=format:%C(yellow)%h%Cred%d\ %Creset%s%Cgreen\ [%ae,%ar] --decorate --graph --first-parent'
+git config --global --replace-all alias.ls1 'log --pretty=format:%C(yellow)%h%Cred%d\ %Creset%s%Cgreen\ [%ae,%ar] --decorate --graph -n 1'
+git config --global --replace-all alias.ll 'log --pretty=format:%C(yellow)%h%Cred%d\ %Creset%s%Cgreen\ [%ce,%cr] --decorate --numstat'
+git config --global --replace-all alias.showname 'show --pretty=format: --name-only'
+git config --global --replace-all alias.fetchp 'fetch -p'
+git config --global --replace-all alias.sha 'rev-parse --short HEAD'
+git config --global --replace-all alias.shal 'rev-parse HEAD'
+git config --global --replace-all alias.pullr 'pull --rebase'
+git config --global --replace-all alias.cm commit
+git config --global --replace-all alias.cb 'rev-parse --abbrev-ref HEAD'
+git config --global --replace-all alias.hist 'branch -a --sort=-committerdate'
+git config --global --replace-all alias.diffs 'diff --staged'
+git config --global --replace-all alias.aliases 'config --get-regexp '"'"'^alias\.'"'"''
+git config --global --replace-all alias.lsn '!f() { n=${1:-10}; shift "$(( $# > 0 ? 1 : 0 ))"; git ls -n "$n" "$@"; }; f'
+git config --global --replace-all alias.ld 'log --graph --decorate --oneline'
+git config --global --replace-all alias.diffname 'diff --name-only'
+git config --global --replace-all alias.stashow '!f() { git stash show "stash@{${1:-0}}"; }; f'
+git config --global --replace-all alias.stashowname '!f() { git stash show --name-only "stash@{${1:-0}}"; }; f'
+git config --global --replace-all alias.stapply '!f() { git stash apply "stash@{${1:-0}}"; }; f'
+git config --global --replace-all alias.shallow-clone 'clone --depth=1'
+git config --global --replace-all alias.partial-clone 'clone --filter=tree:0'
+'''
+
+# Traccia il file sorgente del setup e le shell (inclusi i blocchi di attivazione).
+[dotfiles]
+"~/.config/mise/config.toml" = { mode = "track" }
+"~/.zprofile" = { mode = "track" }
+"~/.zshrc" = { mode = "track" }
+
+[dotfiles."~/.zprofile/mac-setup"]
+block = '''
+# Percorsi delle app/CLI installate da mise bootstrap (formulae e cask).
+# Shims disponibili anche nelle shell login non interattive.
+typeset -U path PATH
+path=("$HOME/.local/bin" /opt/homebrew/opt/curl/bin /opt/homebrew/bin /opt/homebrew/sbin $path)
+export PATH
+eval "$(mise activate zsh --shims)"
+'''
+
+[dotfiles."~/.zshrc/mac-setup"]
+block = '''
+# Base e attivazione gestite nello stesso blocco mise.
+typeset -U path PATH
+path=("$HOME/.local/bin" /opt/homebrew/opt/curl/bin /opt/homebrew/bin /opt/homebrew/sbin $path)
+export PATH
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="robbyrussell"
+plugins=(git)
+# Aggiornato dal bootstrap tramite setup:update; updater automatico OMZ disabilitato.
+zstyle ':omz:update' mode disabled
+[[ -r "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"
+# Warp gestisce il proprio input; fzf integra le altre shell interattive.
+if [[ -o zle && -t 0 && -t 1 && $TERM_PROGRAM != WarpTerminal ]] && (( $+commands[fzf] )); then
+  source <(fzf --zsh)
+fi
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=20000
+SAVEHIST=20000
+setopt HIST_IGNORE_SPACE HIST_IGNORE_ALL_DUPS SHARE_HISTORY
+export EDITOR='code --wait'
+export VISUAL='code --wait'
+alias ll='ls -lah'
+alias gs='git status --short --branch'
+alias dc='docker compose'
+alias m='mise'
+# Personalizzazioni locali non tracciate; non esportare qui credenziali globali.
+if [[ -r "$HOME/.zshrc.local" ]]; then
+  source "$HOME/.zshrc.local"
+fi
+eval "$(mise activate zsh)"
+# Navigazione appresa, con il comando j abituale e ji per la scelta interattiva.
+if (( $+commands[zoxide] )); then
+  eval "$(zoxide init zsh --cmd j)"
+fi
+'''
+
+# Task inline: nessun file .sh da installare o mantenere.
+[tasks.bootstrap]
+description = "Installa estensioni, aggiorna tutto e verifica la shell"
+raw = true
+dir = "~"
+run = '''
+set -eu
+mkdir -p "$HOME/Developer" "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+code_cli='/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code'
+for extension in openai.chatgpt anthropic.claude-code rust-lang.rust-analyzer ms-python.python ms-python.vscode-pylance tamasfe.even-better-toml; do
+  "$code_cli" --install-extension "$extension"
+done
+mise run setup:update
+mise dot save
+mise run setup:verify
+'''
+
+[tasks."setup:verify"]
+description = "Mostra diagnostica e stato nativi di mise"
+dir = "~"
+run = '''
+status=0
+mise doctor || status=1
+mise bootstrap status || status=1
+mise dot status || status=1
+/opt/homebrew/bin/zsh -lic 'node --version && python --version && bun --version && pnpm --version && curl --version' || status=1
+exit "$status"
+'''
+
+[tasks."setup:update"]
+description = "Aggiorna runtime, pacchetti, Oh My Zsh ed estensioni"
+raw = true
+dir = "~"
+run = '''
+set -eu
+MISE_FETCH_REMOTE_VERSIONS_CACHE=0s mise upgrade --no-prune
+mise reshim
+mise bootstrap packages upgrade
+mise bootstrap repos update
+"/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" --update-extensions
+'''
+
+[tasks."setup:ssh"]
+description = "Crea e verifica la chiave GitHub; salva la passphrase nel Portachiavi"
+dir = "~"
+shell = "bash -c"
+raw = true
+run = '''
+set -euo pipefail
+[[ "$(uname -s)" == Darwin ]] || { echo 'Richiede macOS.'; exit 1; }
+[[ "$(id -u)" != 0 ]] || { echo 'Eseguire senza sudo.' >&2; exit 1; }
+umask 077
+key_path="$HOME/.ssh/id_ed25519_github"
+# Riusa la chiave standard, ad esempio creata da gh, se manca quella dedicata.
+if [[ ! -e "$key_path" && -f "$HOME/.ssh/id_ed25519" ]]; then
+  key_path="$HOME/.ssh/id_ed25519"
+fi
+[[ ! -L "$HOME/.ssh" ]] || { echo 'Directory SSH simbolica: verificare manualmente.' >&2; exit 1; }
+for file in "$key_path" "$key_path.pub"; do
+  [[ ! -L "$file" && ( ! -e "$file" || -f "$file" ) ]] || { echo "File SSH non regolare: $file" >&2; exit 1; }
+done
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+if [[ ! -e "$key_path" ]]; then
+  [[ ! -e "$key_path.pub" ]] || { echo 'Chiave pubblica esistente senza privata: verificare manualmente.'; exit 1; }
+  echo 'Inserisci una passphrase robusta quando ssh-keygen la richiede.'
+  /usr/bin/ssh-keygen -t ed25519 -a 100 -C 'github-mac' -f "$key_path"
+fi
+chmod 600 "$key_path"
+# Rifiuta chiavi prive di passphrase, anche se preesistenti.
+if /usr/bin/ssh-keygen -y -P '' -f "$key_path" >/dev/null 2>&1; then
+  echo "Chiave senza passphrase. Impostala con: /usr/bin/ssh-keygen -p -a 100 -f $key_path" >&2
+  exit 1
+fi
+[[ -s "$key_path.pub" ]] || { echo "Chiave pubblica mancante: recuperala con ssh-keygen -y -f $key_path" >&2; exit 1; }
+# Confronta la coppia prima di registrare/copiare la chiave.
+private_public="$(/usr/bin/ssh-keygen -y -f "$key_path")"
+read -r public_type public_data _ < "$key_path.pub"
+[[ "$private_public" == "$public_type $public_data" || "$private_public" == "$public_type $public_data "* ]] || { echo 'Chiave pubblica e privata non corrispondono.' >&2; exit 1; }
+/usr/bin/ssh-add --apple-use-keychain "$key_path"
+/usr/bin/pbcopy < "$key_path.pub"
+printf '%s\n' 'Chiave PUBBLICA copiata. Aggiungila in GitHub > Settings > SSH and GPG keys.' 'Verifica con: /usr/bin/ssh -T git@github.com (GitHub può restituire exit code 1 anche se autenticato).'
+'''
+
+[tasks."setup:github"]
+description = "Collega un repository GitHub privato vuoto, senza pubblicare"
+dir = "~"
+shell = "bash -c"
+raw = true
+run = '''
+set -euo pipefail
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:$PATH"
+[[ "$(id -u)" != 0 ]] || { echo 'Eseguire senza sudo.' >&2; exit 1; }
+cd "$HOME"
+for tool in gh mise; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "Comando mancante: $tool" >&2; exit 1; }
+done
+# Il repo va creato VUOTO e PRIVATO; nessun acquisto o pubblicazione implicita.
+gh auth status --hostname github.com >/dev/null 2>&1 || gh auth login --hostname github.com --git-protocol ssh --web
+read -r -p 'Repository privato VUOTO per la cronologia (OWNER/REPO): ' history_repo
+[[ "$history_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo 'Formato non valido'; exit 1; }
+[[ "$history_repo" != */. && "$history_repo" != */.. ]] || { echo 'Formato non valido'; exit 1; }
+repo_state="$(gh repo view "https://github.com/$history_repo" --json isPrivate,isEmpty,isArchived,viewerPermission --jq '[.isPrivate, .isEmpty, .isArchived, .viewerPermission] | @tsv')"
+IFS=$'\t' read -r is_private is_empty is_archived permission <<< "$repo_state"
+[[ "$is_private" == true && "$is_empty" == true && "$is_archived" == false ]] || { echo 'Richiesto repository privato, vuoto e non archiviato.' >&2; exit 1; }
+[[ "$permission" == ADMIN || "$permission" == MAINTAIN || "$permission" == WRITE ]] || { echo 'Permesso di scrittura richiesto.' >&2; exit 1; }
+echo 'Il remoto riceverà anche i checkpoint precedenti: controlla la cronologia prima di eseguire dot:push.'
+mise dot origin set "git@github.com:${history_repo}.git" --sync manual
+mise dot status
+'''
+
+[tasks."dot:save"]
+dir = "~"
+run = "mise dot save"
+
+[tasks."dot:push"]
+description = "Salva e pubblica manualmente la cronologia"
+dir = "~"
+run = "mise dot save && mise dot sync"
+
+[tasks."dot:pull"]
+description = "Recupera e applica i dotfiles dal remoto"
+dir = "~"
+run = "mise dot pull"
+
+[tasks."setup:git-identity"]
+description = "Configura identità Git personale e lavoro in file locali non tracciati"
+dir = "~"
+shell = "bash -c"
+raw = true
+run = '''
+set -euo pipefail
+read -r -p 'Nome per i commit: ' identity_name
+read -r -p 'Email personale: ' personal_email
+read -r -p 'Email di lavoro: ' work_email
+read -r -p 'Directory assoluta dei repository di lavoro: ' work_dir
+[[ -n "$identity_name" && "$personal_email" == ?*@?* && "$work_email" == ?*@?* ]] || { echo 'Nome ed email richiesti.' >&2; exit 1; }
+# gitdir usa pattern: richiedi un percorso letterale, distinto da HOME e dalla root.
+work_dir="${work_dir%/}"
+case "$work_dir" in
+  /*) ;;
+  *) echo 'Usa un percorso assoluto.' >&2; exit 1 ;;
+esac
+case "$work_dir" in
+  ''|/|"$HOME"|*[\*\?\[\]\\]*|*$'\n'*) echo 'Directory di lavoro troppo ampia o contenente caratteri pattern.' >&2; exit 1 ;;
+esac
+umask 077
+mkdir -p "$work_dir"
+work_dir="$(cd "$work_dir" && pwd -P)"
+[[ "$work_dir" != / && "$work_dir" != "$HOME" ]] || { echo 'Seleziona una sottocartella dedicata al lavoro.' >&2; exit 1; }
+git config --file "$HOME/.gitconfig-work" --replace-all user.email "$work_email"
+git config --file "$HOME/.gitconfig.local" --replace-all user.name "$identity_name"
+git config --file "$HOME/.gitconfig.local" --replace-all user.email "$personal_email"
+git config --file "$HOME/.gitconfig.local" --replace-all "includeIf.gitdir:$work_dir/.path" '~/.gitconfig-work'
+# Posiziona l'include locale dopo eventuali identità globali già presenti.
+git config --global --fixed-value --unset-all include.path '~/.gitconfig.local' || { result=$?; [[ $result == 5 ]] || exit "$result"; }
+git config --global --add include.path '~/.gitconfig.local'
+printf '%s\n' "Identità salvate localmente. Email di lavoro per repository sotto: $work_dir/"
+'''
